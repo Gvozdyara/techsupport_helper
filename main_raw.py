@@ -241,8 +241,15 @@ class App(Tk):
 
         Data_base_file = yadsk.download()
         try:
-            with open(Data_base_file, "rb") as f:
-                Data_base = pickle.load(f)
+            if Data_base_file:
+                with open(Data_base_file, "rb") as f:
+                    Data_base = pickle.load(f)
+            else:
+                Data_base_file = "techsupport_base"
+                with open(Data_base_file, "rb") as f:
+                    Data_base = pickle.load(f)
+
+
         except FileNotFoundError:
             Data_base = dict()
             Data_base["main"] = ["Main folder", "TSH", datetime.now(), datetime.now()]

@@ -20,5 +20,7 @@ def download():
         y.download("/TSH/techsupport_base", "techsupport_base")
         return "techsupport_base"
     except yadisk.exceptions.PathNotFoundError:
-        return "techsupport_base"
-
+        return False
+    except:
+        print("connection error")
+        return False

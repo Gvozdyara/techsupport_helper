@@ -3,11 +3,10 @@ import time
 from datetime import datetime
 from tkinter import *
 from tkinter import ttk
-import sqlite3
 import pickle
-import json
 proceed = False
 import yadsk
+import os
 
 
  #  search interface
@@ -238,18 +237,15 @@ class App(Tk):
         sf = ttk.Style()
         sf.configure("Mainframe.TFrame", background="WHITE")
         sf.configure("Label.TLabel", background="WHITE")
+        Data_base_file = "techsupport_base"
 
-        Data_base_file = yadsk.download()
+        if yadsk.is_disk_more_fresh():
+            yadsk.download()
+        else:
+            pass
         try:
-            if Data_base_file:
-                with open(Data_base_file, "rb") as f:
-                    Data_base = pickle.load(f)
-            else:
-                Data_base_file = "techsupport_base"
-                with open(Data_base_file, "rb") as f:
-                    Data_base = pickle.load(f)
-
-
+            with open(Data_base_file, "rb") as f:
+                Data_base = pickle.load(f)
         except FileNotFoundError:
             Data_base = dict()
             Data_base["main"] = ["Main folder", "TSH", datetime.now(), datetime.now()]
@@ -326,6 +322,10 @@ class SectionBtn(ttk.Button):
 
     def rename_section(self):
         new_table_name = self.entry_widget.get().strip().upper()
+        if yadsk.is_disk_more_fresh():
+            yadsk.download()
+            with open(Data_base_file, "rb") as f:
+                Data_base = pickle.load(f)
         try:
             Data_base[new_table_name]
             messagebox.showinfo("Error", f"{new_table_name} already exists")
@@ -341,7 +341,7 @@ class SectionBtn(ttk.Button):
 
             self.section_name.set(new_table_name)
             with open(Data_base_file, "wb") as f:
-                pickle.dump(Data_base_file, "techsupport_base")
+                pickle.dump(Data_base, f)
             yadsk.upload()
         self.rename_win.destroy()
 
@@ -407,6 +407,10 @@ class SectionInnerLvlLabel(ttk.Label):
 # добавление описания в таблицу
 def add_description(text_widget, current_table):
     description = text_widget.get(1.0, "end").strip()
+    if yadsk.is_disk_more_fresh():
+        yadsk.download()
+        with open(Data_base_file, "rb") as f:
+            Data_base = pickle.load(f)
     Data_base[current_table] = Data_base.pop(current_table)
     Data_base[current_table] = [description, Data_base[current_table][1], Data_base[current_table][2], datetime.now()]
     with open(Data_base_file, "wb") as f:
@@ -452,6 +456,10 @@ def layout_section_btns(current_table):
 def add_section(entry, current_table):
     global root, section_frame
     section_title = entry.get().strip().upper()
+    if yadsk.is_disk_more_fresh():
+        yadsk.download()
+        with open(Data_base_file, "rb") as f:
+            Data_base = pickle.load(f)
     if section_title != "":
         entry.delete(0, 'end')
         # if not section_title in existing_sections:
@@ -565,7 +573,12 @@ def ask_delete_section(parent_table, table_name):
 
 # Удаление раздела из базы данных и возврат к предыдущему разделу
 def delete_section(table_name):
-    previous_content = Data_base[table_name]
+    global Data_base
+    if yadsk.is_disk_more_fresh():
+        yadsk.download()
+        with open(Data_base_file, "rb") as f:
+            Data_base = pickle.load(f)
+    previous_content = Data_base.get(table_name)
 
     try:
         del Data_base[table_name]

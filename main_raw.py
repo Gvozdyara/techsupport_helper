@@ -3,10 +3,31 @@ import time
 from datetime import datetime
 from tkinter import *
 from tkinter import ttk
-import sqlite3
 import pickle
-import json
 proceed = False
+import yadsk
+import os
+
+
+
+class SynchSelector(ttk.Checkbutton):
+    def __init__(self, var):
+        super().__init__(buttons_frame,
+                         command=self.synchronize,
+                    text="Synchronyze",
+                    variable=var)
+        self.pack(side=RIGHT)
+        self.var = var
+
+    def synchronize(self):
+        global Data_base
+        if self.var.get():
+            if yadsk.is_disk_more_fresh():
+                messagebox.askyesno("Error",
+                                    """The base from disk is more fresh. What should I do?""")
+            else:
+                yadsk.upload()
+
 
 
  #  search interface
@@ -26,9 +47,27 @@ proceed = False
 
 
 class SearchInTableDescription:
+    global Data_base
     def __init__(self, frame):
 
-        self.layout_frame = ttk.Frame(frame)
+        self.layout_frame_raw = ttk.Frame(frame, style="Mainframe.TFrame")
+        self.layout_frame_raw.grid(row=2, column=0, columnspan=2)
+        self.layout_canvas = Canvas(self.layout_frame_raw, background="WHITE", width=250)
+        self.layout_scr_bar = ttk.Scrollbar(self.layout_frame_raw,
+                                     orient="vertical",
+                                     command=self.layout_canvas.yview)
+        self.layout_frame = ttk.Frame(self.layout_frame_raw, style="Mainframe.TFrame")
+        self.layout_frame.bind("<Configure>",
+                           lambda e: self.layout_canvas.configure(
+                               scrollregion=self.layout_canvas.bbox("all")))
+        self.layout_canvas.create_window((0, 0), window=self.layout_frame, anchor="nw")
+        self.layout_canvas.configure(yscrollcommand=self.layout_scr_bar.set)
+
+        self.layout_canvas.pack(side=LEFT, fill=BOTH, expand=TRUE)
+        self.layout_scr_bar.pack(side=RIGHT, fill=Y)
+
+
+
         self.search_entry = Entry(frame, width=40)
         self.search_table_name = ttk.Button(frame, text="Search name", command=lambda:self.set_search_mode("table"))
         self.search_description = ttk.Button(frame, text="Search note",
@@ -41,7 +80,7 @@ class SearchInTableDescription:
         self.search_entry.grid(row=0, column=0, columnspan=2, pady=(5,0))
         self.search_table_name.grid(row=1, column=0)
         self.search_description.grid(row=1, column=1)
-        self.layout_frame.grid(row=2, column=0, columnspan=2)
+        # self.layout_frame.grid(row=2, column=0, columnspan=2)
 
     def set_search_mode(self, mode):
         self.search_mode = mode
@@ -79,7 +118,7 @@ class SearchInTableDescription:
                         else:
                             short_description = description[0][0:start_index+200]
                     else:
-                        short_description = description[0]
+                        short_description = description
                     self.table_description_dict[key] = short_description
                     self.found_tables.append(key)
             except AttributeError:
@@ -102,6 +141,7 @@ class SearchInTableDescription:
 
 
 class FoundResult(ttk.Button):
+    global Data_base
     def __init__(self, frame, string, table, search_interface):
         super().__init__(frame, text=string, width=40,
                          command=lambda: open_section(Data_base[table][1], table))
@@ -116,17 +156,17 @@ def layout_search_interface(frame):
 
 #  replaces the notebook interface with the moving interface
 class MoveSectionInterface:
-
+    global Data_base
     def __init__(self, section_to_move):
         for widget in main_frame.winfo_children():
             widget.destroy()
 
-        canvas = Canvas(main_frame)
+        canvas = Canvas(main_frame, background="WHITE")
         canvas.pack(side=LEFT, fill=BOTH, expand=1)
 
         scr_bar = Scrollbar(main_frame, orient=VERTICAL, command=canvas.yview)
         scr_bar.pack(side=RIGHT, fill=Y)
-        sections_frame = ttk.Frame(main_frame)
+        sections_frame = ttk.Frame(main_frame, style="Mainframe.TFrame")
         sections_frame.bind('<Configure>',
                             lambda e: canvas.configure(
                                 scrollregion=canvas.bbox("all")))
@@ -149,6 +189,7 @@ class SectionToSelect(ttk.Button):
 
 #  the back button of the move interface
 class BackBtn(ttk.Button):
+    global Data_base
     def __init__(self, window, current_table, section_to_move):
         super().__init__(window, text="Назад", command=self.go_back, width=40)
         self.pack()
@@ -168,6 +209,7 @@ def layout_btns(frame, current_table, section_to_move):
 
 
 def layout_btn_secnd_phase(frame, current_table, section_to_move):
+    global Data_base
     for widget in frame.winfo_children():
         widget.destroy()
     frame.update()
@@ -176,7 +218,7 @@ def layout_btn_secnd_phase(frame, current_table, section_to_move):
         if Data_base[i][1] == current_table:
             to_layout_list.append(i)
 
-    for item in to_layout_list:
+    for item in reversed(to_layout_list):
         SectionToSelect(frame, item, section_to_move)
 
     ttk.Button(frame, text="Выбрать текущий раздел", width=40,
@@ -197,10 +239,13 @@ def select_to_move(parent_table, section_to_move):
 
     #  change the parent table of the section to move
     table_attr = Data_base[section_to_move]
-    Data_base[section_to_move] = [table_attr[0], parent_table, table_attr[2], get_time()]
+    Data_base[section_to_move] = [table_attr[0], parent_table, table_attr[2], datetime.now()]
 
     with open(Data_base_file, "wb") as f:
         pickle.dump(Data_base, f)
+
+    if synch_mode_var.get():
+        yadsk.upload()
 
 
     layout_frames()
@@ -208,41 +253,58 @@ def select_to_move(parent_table, section_to_move):
 
 
 class App(Tk):
+    global Data_base
     def __init__(self):
-        global main_frame, Data_base_file, current_section_var, current_section_indicator, app
+        global main_frame, Data_base_file, current_section_var, current_section_indicator, app, synch_mode_var
         global Data_base
         super().__init__()
         self.title("AI support notebook")
         self.configure(background="#F4F6F7")
 
         current_section_var = StringVar()
+        synch_mode_var = IntVar()
 
         sf = ttk.Style()
-        sf.configure("Mainframe.TFrame", background="#FEF5E7")
-        sf.configure("Label.TLabel", background="#FEF5E7")
-
+        sf.configure("Mainframe.TFrame", background="WHITE")
+        sf.configure("Label.TLabel", background="WHITE")
         Data_base_file = "techsupport_base"
+
+        try:
+            if yadsk.is_disk_more_fresh():
+                yadsk.download()
+            else:
+                pass
+        except FileNotFoundError:
+            yadsk.download()
+
         try:
             with open(Data_base_file, "rb") as f:
                 Data_base = pickle.load(f)
         except FileNotFoundError:
             Data_base = dict()
-            Data_base["main"] = ["Main folder", "TSH", get_time(), get_time()]
-            Data_base["My notebook"] = ["New note", "main", get_time(), get_time()]
+            Data_base["main"] = ["Main folder", "TSH", datetime.now(), datetime.now()]
+            Data_base["My notebook"] = ["New note", "main", datetime.now(), datetime.now()]
             with open(Data_base_file, "wb") as f:
-                pickle.dump(Data_base_file, f)
-
+                pickle.dump(Data_base, f)
+        except EOFError:
+            Data_base = dict()
+            Data_base["main"] = ["Main folder", "TSH", datetime.now(), datetime.now()]
+            Data_base["My notebook"] = ["New note", "main", datetime.now(), datetime.now()]
+            with open(Data_base_file, "wb") as f:
+                pickle.dump(Data_base, f)
 
         main_frame = ttk.Frame(self, style="Mainframe.TFrame")
         main_frame.pack()
 
         layout_frames()
         open_section("TSH", "main")
+
         self.mainloop()
 
 
 # класс используемый при создании кнопки с именем раздела
 class SectionBtn(ttk.Button):
+    global Data_base
     def __init__(self, frame, button_section_name, click_cmnd, current_table):
         self.section_name = StringVar(value=button_section_name)
         super().__init__(frame, textvariable=self.section_name,
@@ -295,7 +357,13 @@ class SectionBtn(ttk.Button):
         self.rename_win.mainloop()
 
     def rename_section(self):
+        global Data_base
         new_table_name = self.entry_widget.get().strip().upper()
+        if synch_mode_var.get():
+            if yadsk.is_disk_more_fresh():
+                yadsk.download()
+                with open(Data_base_file, "rb") as f:
+                    Data_base = pickle.load(f)
         try:
             Data_base[new_table_name]
             messagebox.showinfo("Error", f"{new_table_name} already exists")
@@ -303,13 +371,17 @@ class SectionBtn(ttk.Button):
         except KeyError:
             Data_base[new_table_name] = Data_base.pop(self.section_name.get())
             table_attr = Data_base[new_table_name]
-            Data_base[new_table_name] = [table_attr[0], table_attr[1], table_attr[2], get_time()]
+            Data_base[new_table_name] = [table_attr[0], table_attr[1], table_attr[2], datetime.now()]
             for i in Data_base:
                 if Data_base[i][1] == self.section_name.get():
                     i_attr = Data_base[i]
-                    Data_base[i] = [i_attr[0], new_table_name, i_attr[2], i_attr[4]]
+                    Data_base[i] = [i_attr[0], new_table_name, i_attr[2], i_attr[3]]
 
-        self.section_name.set(new_table_name)
+            self.section_name.set(new_table_name)
+            with open(Data_base_file, "wb") as f:
+                pickle.dump(Data_base, f)
+            if synch_mode_var.get():
+                yadsk.upload()
         self.rename_win.destroy()
 
     def section_btn_right_clck_menu(self, event):
@@ -327,6 +399,7 @@ class NewSectionEntry(Entry):
                                    command=lambda: add_section(self, current_table))
         self.pack(side=TOP, pady=(10, 0))
         get_entry_btn.pack(side=TOP, pady=(3, 20))
+
 
 
 # класс добавления описания к текущему разделу при помощи Text widget
@@ -354,13 +427,13 @@ class DescriptionText(Text):
 # поле для вывода содержимого таблицы при наведении курсора на кнопку
 class SectionInnerLvlLabel(ttk.Label):
     def __init__(self, frame, to_layout, description, date):
-        to_layout.insert(0, f"{date[0]}\t{date[1]}\nСодержание")
+        to_layout.insert(0, "Содержание")
         if len(to_layout) < 2:
             to_layout.insert(1, "Здесь пока пусто")
         tbl_of_cntns = "\n".join(to_layout)
         super().__init__(frame, wraplength=220, font="Font 9",
                          justify=LEFT, width=40,
-                         text=tbl_of_cntns + "\n" * 2 + str(description[:500]) + "...",
+                         text=f"{date[0]}\t{date[1]}\n{str(description[:500])}...\n\n{tbl_of_cntns}",
                          padding=(5, 10, 2, 0), style="Label.TLabel")
         self.grid(row=0, column=0, sticky=EW)
 
@@ -373,11 +446,19 @@ class SectionInnerLvlLabel(ttk.Label):
 
 # добавление описания в таблицу
 def add_description(text_widget, current_table):
+    global Data_base
     description = text_widget.get(1.0, "end").strip()
-    previous_content = Data_base[current_table]
-    Data_base[current_table] = [description, previous_content[1], previous_content[2], get_time()]
+    if synch_mode_var.get():
+        if yadsk.is_disk_more_fresh():
+            yadsk.download()
+            with open(Data_base_file, "rb") as f:
+                Data_base = pickle.load(f)
+    Data_base[current_table] = Data_base.pop(current_table)
+    Data_base[current_table] = [description, Data_base[current_table][1], Data_base[current_table][2], datetime.now()]
     with open(Data_base_file, "wb") as f:
         pickle.dump(Data_base, f)
+    if synch_mode_var.get():
+        yadsk.upload()
 
     text_widget.update_descr_from_base(description)
 
@@ -386,6 +467,7 @@ def add_description(text_widget, current_table):
 def layout_section_btns(current_table):
     global Data_base
     to_layout_list = list()
+
     for i in Data_base:
         if Data_base[i][1] == current_table:
             to_layout_list.append(i)
@@ -406,7 +488,7 @@ def layout_section_btns(current_table):
     #     modified_list.append(time_to_sec(tup[1]))
     # sorted(modified_list, key=lambda seconds: seconds[1])
 
-    for item in to_layout_list:
+    for item in reversed(to_layout_list):
         SectionBtn(section_frame,
                    item,  # section_name
                    open_section,
@@ -415,8 +497,16 @@ def layout_section_btns(current_table):
 
 # функция добавления нового раздела к базе данных, а также вывода ее в интрефейс в виде кнопки
 def add_section(entry, current_table):
-    global root, section_frame
+    global root, section_frame, Data_base
     section_title = entry.get().strip().upper()
+    print(synch_mode_var.get())
+    if synch_mode_var.get():
+        if yadsk.is_disk_more_fresh():
+            yadsk.download()
+            with open(Data_base_file, "rb") as f:
+                Data_base = pickle.load(f)
+    else:
+        pass
     if section_title != "":
         entry.delete(0, 'end')
         # if not section_title in existing_sections:
@@ -433,25 +523,30 @@ def add_section(entry, current_table):
 
 
 def add_table_to_tbls_list(name, parent_table):
-    Data_base[name] = ["Empty", parent_table, get_time(), get_time()]
+    global Data_base
+
+    Data_base[name] = ["Empty", parent_table, datetime.now(), datetime.now()]
     with open(Data_base_file, "wb") as f:
         pickle.dump(Data_base, f)
+    if synch_mode_var.get():
+        yadsk.upload()
 
 
 def layout_frames():
     global buttons_frame, section_frame, section_inner_lvl_frame, notebook_frame, back_btn, current_section_indicator
-
+    global Data_base, synch_mode_var
     for widget in main_frame.winfo_children():
         widget.destroy()
 
     buttons_frame = ttk.Frame(main_frame, style="Mainframe.TFrame")
     buttons_frame.grid(row=0, column=0, columnspan=3, sticky=W)
-    current_section_indicator = Label(buttons_frame, textvariable=current_section_var, background="#FEF5E7",
+    current_section_indicator = Label(buttons_frame, textvariable=current_section_var, background="WHITE",
                                       font="BOLD")
+    synch_sel_btn = SynchSelector(synch_mode_var)
 
     sections_raw_frame = ttk.Frame(main_frame, style="Mainframe.TFrame")
     sections_raw_frame.grid(row=1, column=0, sticky=NS)
-    sections_canvas = Canvas(sections_raw_frame, background="#FEF5E7")
+    sections_canvas = Canvas(sections_raw_frame, background="WHITE", width=250)
     sections_scr_bar = ttk.Scrollbar(sections_raw_frame,
                                      orient="vertical",
                                      command=sections_canvas.yview)
@@ -466,10 +561,12 @@ def layout_frames():
     sections_canvas.pack(side=LEFT, fill=BOTH, expand=TRUE)
     sections_scr_bar.pack(side=RIGHT, fill=Y)
 
+
+
     section_inner_lvl_raw_frame = ttk.Frame(main_frame, style="Mainframe.TFrame")
     section_inner_lvl_raw_frame.grid(row=1, column=1, sticky=NSEW, padx=0)
 
-    inner_lvl_canvas = Canvas(section_inner_lvl_raw_frame, background="#FEF5E7")
+    inner_lvl_canvas = Canvas(section_inner_lvl_raw_frame, background="WHITE", width=300)
     inner_lvl_scr_bar = ttk.Scrollbar(section_inner_lvl_raw_frame,
                                      orient="vertical",
                                      command=inner_lvl_canvas.yview)
@@ -479,10 +576,12 @@ def layout_frames():
                            scrollregion=inner_lvl_canvas.bbox("all")
                        ))
     inner_lvl_canvas.create_window((0, 0), window=section_inner_lvl_frame, anchor="nw")
-    sections_canvas.configure(yscrollcommand=inner_lvl_scr_bar.set)
+    inner_lvl_canvas.configure(yscrollcommand=inner_lvl_scr_bar.set)
 
     inner_lvl_canvas.pack(side=LEFT, fill=BOTH, expand=TRUE)
     inner_lvl_scr_bar.pack(side=RIGHT, fill=Y)
+
+
 
 
     notebook_frame = ttk.Frame(main_frame, style="Mainframe.TFrame")
@@ -525,16 +624,26 @@ def ask_delete_section(parent_table, table_name):
 
 # Удаление раздела из базы данных и возврат к предыдущему разделу
 def delete_section(table_name):
-    previous_content = Data_base[table_name]
+    global Data_base
+    if synch_mode_var.get():
+        if yadsk.is_disk_more_fresh():
+            yadsk.download()
+            with open(Data_base_file, "rb") as f:
+                Data_base = pickle.load(f)
+    previous_content = Data_base.get(table_name)
 
     try:
         del Data_base[table_name]
-
+        Data_base_temp = dict()
         for i in Data_base:
-            if Data_base[i][1] == table_name:
+            Data_base_temp[i] = Data_base[i]
+        for i in Data_base_temp:
+            if Data_base_temp[i][1] == table_name:
                 del Data_base[i]
         with open(Data_base_file, "wb") as f:
             pickle.dump(Data_base, f)
+        if synch_mode_var.get():
+            yadsk.upload()
 
     except KeyError:
         messagebox.showinfo("Ошибка", "Нельзя удалить основной раздел")
@@ -544,6 +653,12 @@ def delete_section(table_name):
 
 # вызов класса move section interface
 def call_move_section(table_name):
+    global Data_base
+    if synch_mode_var.get():
+        if yadsk.is_disk_more_fresh():
+                yadsk.download()
+                with open(Data_base_file, "rb") as f:
+                    Data_base = pickle.load(f)
     MoveSectionInterface(table_name)
 
 
@@ -555,22 +670,14 @@ def call_move_section(table_name):
 def open_section(current_table, inner_table):
     global Data_base
     #  удаляем все кнопки с секциями из фрейма-кнопок для заполнения его новыми кнопками
+    layout_frames()
 
-    for widget in section_frame.winfo_children():
-        widget.destroy()
-    section_frame.update()
     #  отправляем команду на создание нового фрейма, нового Энтри  для добавления разделов внутрь открываемого
     NewSectionEntry(section_frame, inner_table)
-    # удаляем все кнопки с секциями из фрейма-энтри для заполнения его новыми кнопками
-    for widget in notebook_frame.winfo_children():
-        widget.destroy()
-    notebook_frame.update()
-    # выкладываем имеющиеся разделы
+
 
     layout_section_btns(inner_table)
-    for widget in buttons_frame.winfo_children():
-        widget.pack_forget()
-    buttons_frame.update()
+
 
     description_text_widget = DescriptionText(notebook_frame, inner_table)
 
@@ -601,13 +708,10 @@ def open_section(current_table, inner_table):
                             command=lambda: layout_search_interface(notebook_frame))
     search_btn.pack(side=RIGHT, pady=(5,0), padx=(10,0))
 
-    current_section_var.set(f"../{current_table}/{inner_table}")
+    current_section_var.set(f"../{current_table[0:10].lower()} /{inner_table[0:10].lower()}")
     current_section_indicator.pack()
 
 
-#  this function returns string YYYY-MM-DD HH:MM:SS
-def get_time():
-    return str(datetime.now())[:-7]
 
 
 def time_to_sec(str_time):

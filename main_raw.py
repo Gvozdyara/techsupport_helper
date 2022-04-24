@@ -6,27 +6,88 @@ from tkinter import ttk
 import pickle
 proceed = False
 import yadsk
-import os
+import requests
 
 
 
 class SynchSelector(ttk.Checkbutton):
-    def __init__(self, var):
-        super().__init__(buttons_frame,
+    def __init__(self, frame, var):
+        super().__init__(frame,
                          command=self.synchronize,
                     text="Synchronyze",
                     variable=var)
-        self.pack(side=RIGHT)
+        self.pack(side=TOP)
         self.var = var
 
     def synchronize(self):
         global Data_base
+        # check synch status
         if self.var.get():
-            if yadsk.is_disk_more_fresh():
-                messagebox.askyesno("Error",
-                                    """The base from disk is more fresh. What should I do?""")
+            #   check if the disk is more fresh
+            #  the same if no file on the disk to compare
+            if yadsk.is_cloud_more_fresh(synch_mode_var):
+                #  select the option
+                if messagebox.askyesno("Attention",
+"The base from the cloud is more fresh. Update from the cloud (Yes) or update the cloud (No)?"):
+                    #  try to download from the cloud
+                    if yadsk.download():
+                        #  after download successfull open the file
+                        with open(Data_base_file, "rb") as f:
+                            Data_base = pickle.load(f)
+                    #  if couldn't download the file show error
+                    else:
+                        messagebox.showinfo("Error", "couldn't download from the cloud")
+                         # open section offline
+                #  if update the cloud from the disk selected
+                else:
+                    try:
+                        #  try upload the file to the cloud
+                        yadsk.upload()
+                        with open(Data_base_file, "rb") as f:
+                            Data_base = pickle.load(f)
+                    #  if file not found on the disk create a new empty one
+                    except FileNotFoundError:
+                        Data_base = dict()
+                        Data_base["main"] = ["Main folder", "TSH", datetime.now(), datetime.now()]
+                        Data_base["My notebook"] = ["New note", "main", datetime.now(), datetime.now()]
+                        with open(Data_base_file, "wb") as f:
+                            pickle.dump(Data_base, f)
+            #  if disk is more fresh or no file in the cloud
             else:
-                yadsk.upload()
+                try:
+                     #  try upload to the cloud
+                     yadsk.upload()
+                     with open(Data_base_file, "rb") as f:
+                         Data_base = pickle.load(f)
+                #  if no file on the disk create the new one
+                except FileNotFoundError:
+                    print("filenotfound")
+                    Data_base = dict()
+                    Data_base["main"] = ["Main folder", "TSH", datetime.now(), datetime.now()]
+                    Data_base["My notebook"] = ["New note", "main", datetime.now(), datetime.now()]
+                    with open(Data_base_file, "wb") as f:
+                        pickle.dump(Data_base, f)
+                except:
+                    print("connection error probably")
+                    messagebox.showinfo("Attention",
+                "No connection. Proceed only if the base on the disk is up to date and no other user will change the cloud version")
+                    try:
+                        with open(Data_base_file, "rb") as f:
+                            Data_base = pickle.load(f)
+                    except EOFError:
+                        print("EOFError")
+                        Data_base = dict()
+                        Data_base["main"] = ["Main folder", "TSH", datetime.now(), datetime.now()]
+                        Data_base["My notebook"] = ["New note", "main", datetime.now(), datetime.now()]
+                        with open(Data_base_file, "wb") as f:
+                            pickle.dump(Data_base, f)
+                    except FileNotFoundError:
+                        print("FileNotFoundError")
+                        Data_base = dict()
+                        Data_base["main"] = ["Main folder", "TSH", datetime.now(), datetime.now()]
+                        Data_base["My notebook"] = ["New note", "main", datetime.now(), datetime.now()]
+                        with open(Data_base_file, "wb") as f:
+                            pickle.dump(Data_base, f)
 
 
 
@@ -263,38 +324,36 @@ class App(Tk):
 
         current_section_var = StringVar()
         synch_mode_var = IntVar()
+        synch_mode_var.set(1)
 
         sf = ttk.Style()
         sf.configure("Mainframe.TFrame", background="WHITE")
         sf.configure("Label.TLabel", background="WHITE")
         Data_base_file = "techsupport_base"
-
-        try:
-            if yadsk.is_disk_more_fresh():
-                yadsk.download()
-            else:
-                pass
-        except FileNotFoundError:
-            yadsk.download()
-
-        try:
-            with open(Data_base_file, "rb") as f:
-                Data_base = pickle.load(f)
-        except FileNotFoundError:
-            Data_base = dict()
-            Data_base["main"] = ["Main folder", "TSH", datetime.now(), datetime.now()]
-            Data_base["My notebook"] = ["New note", "main", datetime.now(), datetime.now()]
-            with open(Data_base_file, "wb") as f:
-                pickle.dump(Data_base, f)
-        except EOFError:
-            Data_base = dict()
-            Data_base["main"] = ["Main folder", "TSH", datetime.now(), datetime.now()]
-            Data_base["My notebook"] = ["New note", "main", datetime.now(), datetime.now()]
-            with open(Data_base_file, "wb") as f:
-                pickle.dump(Data_base, f)
+        #
+        #
+        #
+        # try:
+        #     with open(Data_base_file, "rb") as f:
+        #         Data_base = pickle.load(f)
+        # except FileNotFoundError:
+        #     Data_base = dict()
+        #     Data_base["main"] = ["Main folder", "TSH", datetime.now(), datetime.now()]
+        #     Data_base["My notebook"] = ["New note", "main", datetime.now(), datetime.now()]
+        #     with open(Data_base_file, "wb") as f:
+        #         pickle.dump(Data_base, f)
+        # except EOFError:
+        #     Data_base = dict()
+        #     Data_base["main"] = ["Main folder", "TSH", datetime.now(), datetime.now()]
+        #     Data_base["My notebook"] = ["New note", "main", datetime.now(), datetime.now()]
+        #     with open(Data_base_file, "wb") as f:
+        #         pickle.dump(Data_base, f)
 
         main_frame = ttk.Frame(self, style="Mainframe.TFrame")
         main_frame.pack()
+
+        synch_sel_btn = SynchSelector(self, synch_mode_var)
+        synch_sel_btn.synchronize()
 
         layout_frames()
         open_section("TSH", "main")
@@ -360,7 +419,7 @@ class SectionBtn(ttk.Button):
         global Data_base
         new_table_name = self.entry_widget.get().strip().upper()
         if synch_mode_var.get():
-            if yadsk.is_disk_more_fresh():
+            if yadsk.is_cloud_more_fresh(synch_mode_var):
                 yadsk.download()
                 with open(Data_base_file, "rb") as f:
                     Data_base = pickle.load(f)
@@ -449,7 +508,7 @@ def add_description(text_widget, current_table):
     global Data_base
     description = text_widget.get(1.0, "end").strip()
     if synch_mode_var.get():
-        if yadsk.is_disk_more_fresh():
+        if yadsk.is_cloud_more_fresh(synch_mode_var):
             yadsk.download()
             with open(Data_base_file, "rb") as f:
                 Data_base = pickle.load(f)
@@ -501,7 +560,7 @@ def add_section(entry, current_table):
     section_title = entry.get().strip().upper()
     print(synch_mode_var.get())
     if synch_mode_var.get():
-        if yadsk.is_disk_more_fresh():
+        if yadsk.is_cloud_more_fresh(synch_mode_var):
             yadsk.download()
             with open(Data_base_file, "rb") as f:
                 Data_base = pickle.load(f)
@@ -542,7 +601,6 @@ def layout_frames():
     buttons_frame.grid(row=0, column=0, columnspan=3, sticky=W)
     current_section_indicator = Label(buttons_frame, textvariable=current_section_var, background="WHITE",
                                       font="BOLD")
-    synch_sel_btn = SynchSelector(synch_mode_var)
 
     sections_raw_frame = ttk.Frame(main_frame, style="Mainframe.TFrame")
     sections_raw_frame.grid(row=1, column=0, sticky=NS)
@@ -590,6 +648,7 @@ def layout_frames():
     back_btn = ttk.Button(buttons_frame, text="Назад", command=None)
 
 
+
 # Вернуться к предыдущему разделу, спросить о сохранении, в некоторых случаях text_widget=None
 def go_to_previous_section(current_table, text_widget):
     try:
@@ -626,7 +685,7 @@ def ask_delete_section(parent_table, table_name):
 def delete_section(table_name):
     global Data_base
     if synch_mode_var.get():
-        if yadsk.is_disk_more_fresh():
+        if yadsk.is_cloud_more_fresh(synch_mode_var):
             yadsk.download()
             with open(Data_base_file, "rb") as f:
                 Data_base = pickle.load(f)
@@ -655,7 +714,7 @@ def delete_section(table_name):
 def call_move_section(table_name):
     global Data_base
     if synch_mode_var.get():
-        if yadsk.is_disk_more_fresh():
+        if yadsk.is_cloud_more_fresh(synch_mode_var):
                 yadsk.download()
                 with open(Data_base_file, "rb") as f:
                     Data_base = pickle.load(f)
@@ -670,6 +729,7 @@ def call_move_section(table_name):
 def open_section(current_table, inner_table):
     global Data_base
     #  удаляем все кнопки с секциями из фрейма-кнопок для заполнения его новыми кнопками
+
     layout_frames()
 
     #  отправляем команду на создание нового фрейма, нового Энтри  для добавления разделов внутрь открываемого

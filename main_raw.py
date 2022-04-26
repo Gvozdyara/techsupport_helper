@@ -6,7 +6,89 @@ from tkinter import ttk
 import pickle
 proceed = False
 import yadsk
-import os
+import requests
+
+
+
+class SynchSelector(ttk.Checkbutton):
+    def __init__(self, frame, var):
+        super().__init__(frame,
+                         command=self.synchronize,
+                    text="Synchronyze",
+                    variable=var)
+        self.pack(side=TOP)
+        self.var = var
+
+    def synchronize(self):
+        global Data_base
+        # check synch status
+        if self.var.get():
+            #   check if the disk is more fresh
+            #  the same if no file on the disk to compare
+            if yadsk.is_cloud_more_fresh(synch_mode_var):
+                #  select the option
+                if messagebox.askyesno("Attention",
+"The base from the cloud is more fresh. Update from the cloud (Yes) or update the cloud (No)?"):
+                    #  try to download from the cloud
+                    if yadsk.download():
+                        #  after download successfull open the file
+                        with open(Data_base_file, "rb") as f:
+                            Data_base = pickle.load(f)
+                    #  if couldn't download the file show error
+                    else:
+                        messagebox.showinfo("Error", "couldn't download from the cloud")
+                         # open section offline
+                #  if update the cloud from the disk selected
+                else:
+                    try:
+                        #  try upload the file to the cloud
+                        yadsk.upload()
+                        with open(Data_base_file, "rb") as f:
+                            Data_base = pickle.load(f)
+                    #  if file not found on the disk create a new empty one
+                    except FileNotFoundError:
+                        Data_base = dict()
+                        Data_base["main"] = ["Main folder", "TSH", datetime.now(), datetime.now()]
+                        Data_base["My notebook"] = ["New note", "main", datetime.now(), datetime.now()]
+                        with open(Data_base_file, "wb") as f:
+                            pickle.dump(Data_base, f)
+            #  if disk is more fresh or no file in the cloud
+            else:
+                try:
+                     #  try upload to the cloud
+                     yadsk.upload()
+                     with open(Data_base_file, "rb") as f:
+                         Data_base = pickle.load(f)
+                #  if no file on the disk create the new one
+                except FileNotFoundError:
+                    print("filenotfound")
+                    Data_base = dict()
+                    Data_base["main"] = ["Main folder", "TSH", datetime.now(), datetime.now()]
+                    Data_base["My notebook"] = ["New note", "main", datetime.now(), datetime.now()]
+                    with open(Data_base_file, "wb") as f:
+                        pickle.dump(Data_base, f)
+                except:
+                    print("connection error probably")
+                    messagebox.showinfo("Attention",
+                "No connection. Proceed only if the base on the disk is up to date and no other user will change the cloud version")
+                    try:
+                        with open(Data_base_file, "rb") as f:
+                            Data_base = pickle.load(f)
+                    except EOFError:
+                        print("EOFError")
+                        Data_base = dict()
+                        Data_base["main"] = ["Main folder", "TSH", datetime.now(), datetime.now()]
+                        Data_base["My notebook"] = ["New note", "main", datetime.now(), datetime.now()]
+                        with open(Data_base_file, "wb") as f:
+                            pickle.dump(Data_base, f)
+                    except FileNotFoundError:
+                        print("FileNotFoundError")
+                        Data_base = dict()
+                        Data_base["main"] = ["Main folder", "TSH", datetime.now(), datetime.now()]
+                        Data_base["My notebook"] = ["New note", "main", datetime.now(), datetime.now()]
+                        with open(Data_base_file, "wb") as f:
+                            pickle.dump(Data_base, f)
+
 
 
  #  search interface
@@ -26,6 +108,7 @@ import os
 
 
 class SearchInTableDescription:
+    global Data_base
     def __init__(self, frame):
 
         self.layout_frame_raw = ttk.Frame(frame, style="Mainframe.TFrame")
@@ -119,6 +202,7 @@ class SearchInTableDescription:
 
 
 class FoundResult(ttk.Button):
+    global Data_base
     def __init__(self, frame, string, table, search_interface):
         super().__init__(frame, text=string, width=40,
                          command=lambda: open_section(Data_base[table][1], table))
@@ -133,7 +217,7 @@ def layout_search_interface(frame):
 
 #  replaces the notebook interface with the moving interface
 class MoveSectionInterface:
-
+    global Data_base
     def __init__(self, section_to_move):
         for widget in main_frame.winfo_children():
             widget.destroy()
@@ -166,6 +250,7 @@ class SectionToSelect(ttk.Button):
 
 #  the back button of the move interface
 class BackBtn(ttk.Button):
+    global Data_base
     def __init__(self, window, current_table, section_to_move):
         super().__init__(window, text="Назад", command=self.go_back, width=40)
         self.pack()
@@ -185,6 +270,7 @@ def layout_btns(frame, current_table, section_to_move):
 
 
 def layout_btn_secnd_phase(frame, current_table, section_to_move):
+    global Data_base
     for widget in frame.winfo_children():
         widget.destroy()
     frame.update()
@@ -219,56 +305,65 @@ def select_to_move(parent_table, section_to_move):
     with open(Data_base_file, "wb") as f:
         pickle.dump(Data_base, f)
 
+    if synch_mode_var.get():
+        yadsk.upload()
+
 
     layout_frames()
     open_section(parent_table, section_to_move)
 
 
 class App(Tk):
+    global Data_base
     def __init__(self):
-        global main_frame, Data_base_file, current_section_var, current_section_indicator, app
+        global main_frame, Data_base_file, current_section_var, current_section_indicator, app, synch_mode_var
         global Data_base
         super().__init__()
         self.title("AI support notebook")
         self.configure(background="#F4F6F7")
 
         current_section_var = StringVar()
+        synch_mode_var = IntVar()
+        synch_mode_var.set(1)
 
         sf = ttk.Style()
         sf.configure("Mainframe.TFrame", background="WHITE")
         sf.configure("Label.TLabel", background="WHITE")
         Data_base_file = "techsupport_base"
-
-        if yadsk.is_disk_more_fresh():
-            yadsk.download()
-        else:
-            pass
-        try:
-            with open(Data_base_file, "rb") as f:
-                Data_base = pickle.load(f)
-        except FileNotFoundError:
-            Data_base = dict()
-            Data_base["main"] = ["Main folder", "TSH", datetime.now(), datetime.now()]
-            Data_base["My notebook"] = ["New note", "main", datetime.now(), datetime.now()]
-            with open(Data_base_file, "wb") as f:
-                pickle.dump(Data_base_file, f)
-        except EOFError:
-            Data_base = dict()
-            Data_base["main"] = ["Main folder", "TSH", datetime.now(), datetime.now()]
-            Data_base["My notebook"] = ["New note", "main", datetime.now(), datetime.now()]
-            with open(Data_base_file, "wb") as f:
-                pickle.dump(Data_base_file, f)
+        #
+        #
+        #
+        # try:
+        #     with open(Data_base_file, "rb") as f:
+        #         Data_base = pickle.load(f)
+        # except FileNotFoundError:
+        #     Data_base = dict()
+        #     Data_base["main"] = ["Main folder", "TSH", datetime.now(), datetime.now()]
+        #     Data_base["My notebook"] = ["New note", "main", datetime.now(), datetime.now()]
+        #     with open(Data_base_file, "wb") as f:
+        #         pickle.dump(Data_base, f)
+        # except EOFError:
+        #     Data_base = dict()
+        #     Data_base["main"] = ["Main folder", "TSH", datetime.now(), datetime.now()]
+        #     Data_base["My notebook"] = ["New note", "main", datetime.now(), datetime.now()]
+        #     with open(Data_base_file, "wb") as f:
+        #         pickle.dump(Data_base, f)
 
         main_frame = ttk.Frame(self, style="Mainframe.TFrame")
         main_frame.pack()
 
+        synch_sel_btn = SynchSelector(self, synch_mode_var)
+        synch_sel_btn.synchronize()
+
         layout_frames()
         open_section("TSH", "main")
+
         self.mainloop()
 
 
 # класс используемый при создании кнопки с именем раздела
 class SectionBtn(ttk.Button):
+    global Data_base
     def __init__(self, frame, button_section_name, click_cmnd, current_table):
         self.section_name = StringVar(value=button_section_name)
         super().__init__(frame, textvariable=self.section_name,
@@ -321,11 +416,13 @@ class SectionBtn(ttk.Button):
         self.rename_win.mainloop()
 
     def rename_section(self):
+        global Data_base
         new_table_name = self.entry_widget.get().strip().upper()
-        if yadsk.is_disk_more_fresh():
-            yadsk.download()
-            with open(Data_base_file, "rb") as f:
-                Data_base = pickle.load(f)
+        if synch_mode_var.get():
+            if yadsk.is_cloud_more_fresh(synch_mode_var):
+                yadsk.download()
+                with open(Data_base_file, "rb") as f:
+                    Data_base = pickle.load(f)
         try:
             Data_base[new_table_name]
             messagebox.showinfo("Error", f"{new_table_name} already exists")
@@ -342,7 +439,8 @@ class SectionBtn(ttk.Button):
             self.section_name.set(new_table_name)
             with open(Data_base_file, "wb") as f:
                 pickle.dump(Data_base, f)
-            yadsk.upload()
+            if synch_mode_var.get():
+                yadsk.upload()
         self.rename_win.destroy()
 
     def section_btn_right_clck_menu(self, event):
@@ -362,6 +460,7 @@ class NewSectionEntry(Entry):
         get_entry_btn.pack(side=TOP, pady=(3, 20))
 
 
+
 # класс добавления описания к текущему разделу при помощи Text widget
 class DescriptionText(Text):
     def __init__(self, frame, current_table):
@@ -371,12 +470,34 @@ class DescriptionText(Text):
                                                                   current_table))
         description = (Data_base[current_table])[0]
 
-
+        self.frame = frame
         self.insert(END, description)
         get_text_btn.grid(row=0, column=0, sticky=EW)
         self.grid(row=1, column=0, sticky=N)
         self.descr_from_base = description
         self.table = current_table
+        self.bind("<Button-3>", self.text_right_clck_menu)
+        self.right_clck_menu = Menu(self.frame, tearoff=0)
+        self.right_clck_menu.add_command(label="Copy", command=self.copy_to_buffer)
+        self.right_clck_menu.add_command(label="Paste", command=self.paste_from_buffer)
+
+    def copy_to_buffer(self):
+        self.clipboard_clear()
+        self.clipboard_append(self.get(SEL_FIRST, SEL_LAST))
+        return
+
+    def paste_from_buffer(self):
+        # try:
+        clipboard = self.frame.clipboard_get()
+        self.insert(INSERT, clipboard)
+        # except:
+        # pass
+
+    def text_right_clck_menu(self, event):
+        try:
+            self.right_clck_menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            self.right_clck_menu.grab_release()
 
     def update_descr_from_base(self, new_description):
             self.descr_from_base = new_description
@@ -406,16 +527,19 @@ class SectionInnerLvlLabel(ttk.Label):
 
 # добавление описания в таблицу
 def add_description(text_widget, current_table):
+    global Data_base
     description = text_widget.get(1.0, "end").strip()
-    if yadsk.is_disk_more_fresh():
-        yadsk.download()
-        with open(Data_base_file, "rb") as f:
-            Data_base = pickle.load(f)
+    if synch_mode_var.get():
+        if yadsk.is_cloud_more_fresh(synch_mode_var):
+            yadsk.download()
+            with open(Data_base_file, "rb") as f:
+                Data_base = pickle.load(f)
     Data_base[current_table] = Data_base.pop(current_table)
     Data_base[current_table] = [description, Data_base[current_table][1], Data_base[current_table][2], datetime.now()]
     with open(Data_base_file, "wb") as f:
         pickle.dump(Data_base, f)
-    yadsk.upload()
+    if synch_mode_var.get():
+        yadsk.upload()
 
     text_widget.update_descr_from_base(description)
 
@@ -454,12 +578,16 @@ def layout_section_btns(current_table):
 
 # функция добавления нового раздела к базе данных, а также вывода ее в интрефейс в виде кнопки
 def add_section(entry, current_table):
-    global root, section_frame
+    global root, section_frame, Data_base
     section_title = entry.get().strip().upper()
-    if yadsk.is_disk_more_fresh():
-        yadsk.download()
-        with open(Data_base_file, "rb") as f:
-            Data_base = pickle.load(f)
+    print(synch_mode_var.get())
+    if synch_mode_var.get():
+        if yadsk.is_cloud_more_fresh(synch_mode_var):
+            yadsk.download()
+            with open(Data_base_file, "rb") as f:
+                Data_base = pickle.load(f)
+    else:
+        pass
     if section_title != "":
         entry.delete(0, 'end')
         # if not section_title in existing_sections:
@@ -476,15 +604,18 @@ def add_section(entry, current_table):
 
 
 def add_table_to_tbls_list(name, parent_table):
+    global Data_base
+
     Data_base[name] = ["Empty", parent_table, datetime.now(), datetime.now()]
     with open(Data_base_file, "wb") as f:
         pickle.dump(Data_base, f)
-    yadsk.upload()
+    if synch_mode_var.get():
+        yadsk.upload()
 
 
 def layout_frames():
     global buttons_frame, section_frame, section_inner_lvl_frame, notebook_frame, back_btn, current_section_indicator
-
+    global Data_base, synch_mode_var
     for widget in main_frame.winfo_children():
         widget.destroy()
 
@@ -539,6 +670,7 @@ def layout_frames():
     back_btn = ttk.Button(buttons_frame, text="Назад", command=None)
 
 
+
 # Вернуться к предыдущему разделу, спросить о сохранении, в некоторых случаях text_widget=None
 def go_to_previous_section(current_table, text_widget):
     try:
@@ -574,10 +706,11 @@ def ask_delete_section(parent_table, table_name):
 # Удаление раздела из базы данных и возврат к предыдущему разделу
 def delete_section(table_name):
     global Data_base
-    if yadsk.is_disk_more_fresh():
-        yadsk.download()
-        with open(Data_base_file, "rb") as f:
-            Data_base = pickle.load(f)
+    if synch_mode_var.get():
+        if yadsk.is_cloud_more_fresh(synch_mode_var):
+            yadsk.download()
+            with open(Data_base_file, "rb") as f:
+                Data_base = pickle.load(f)
     previous_content = Data_base.get(table_name)
 
     try:
@@ -590,7 +723,8 @@ def delete_section(table_name):
                 del Data_base[i]
         with open(Data_base_file, "wb") as f:
             pickle.dump(Data_base, f)
-        yadsk.upload()
+        if synch_mode_var.get():
+            yadsk.upload()
 
     except KeyError:
         messagebox.showinfo("Ошибка", "Нельзя удалить основной раздел")
@@ -600,6 +734,12 @@ def delete_section(table_name):
 
 # вызов класса move section interface
 def call_move_section(table_name):
+    global Data_base
+    if synch_mode_var.get():
+        if yadsk.is_cloud_more_fresh(synch_mode_var):
+                yadsk.download()
+                with open(Data_base_file, "rb") as f:
+                    Data_base = pickle.load(f)
     MoveSectionInterface(table_name)
 
 
@@ -611,6 +751,7 @@ def call_move_section(table_name):
 def open_section(current_table, inner_table):
     global Data_base
     #  удаляем все кнопки с секциями из фрейма-кнопок для заполнения его новыми кнопками
+
     layout_frames()
 
     #  отправляем команду на создание нового фрейма, нового Энтри  для добавления разделов внутрь открываемого
@@ -651,6 +792,7 @@ def open_section(current_table, inner_table):
 
     current_section_var.set(f"../{current_table[0:10].lower()} /{inner_table[0:10].lower()}")
     current_section_indicator.pack()
+
 
 
 

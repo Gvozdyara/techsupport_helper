@@ -42,6 +42,8 @@ def is_cloud_more_fresh(var):
         file_mode_time_epoch = os.path.getmtime("techsupport_base")
         file_mode_time = dt.datetime.utcfromtimestamp(file_mode_time_epoch)
         if resobj["modified"].replace(tzinfo=None) - file_mode_time >= dt.timedelta(seconds=100):
+            print(resobj["modified"].replace(tzinfo=None))
+            print(file_mode_time)
             return True
         else:
             return False
@@ -49,6 +51,7 @@ def is_cloud_more_fresh(var):
         print("PathNotFoundError")
         return False
     except FileNotFoundError:
+        print("FilenotFound")
         return True
     except requests.exceptions.ConnectionError:
         print("connection error")

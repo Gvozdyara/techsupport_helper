@@ -467,7 +467,7 @@ class DescriptionText(Text):
         super().__init__(frame, height=25, wrap="word", width=40, font="Font 9")
         get_text_btn = ttk.Button(frame, text="Добавить описание к текущему разделу",
                                   command=lambda: add_description(self,
-                                                                  current_table))
+                                                                  current_table), state=ACTIVE)
         description = (Data_base[current_table])[0]
 
         self.frame = frame
